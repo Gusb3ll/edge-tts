@@ -25,7 +25,8 @@ TTS_SECRET = "kuyG1bW3qnG5ofoUQOM"
 
 def verify_secret(x_tts_secret: str = Header(...)) -> None:
     if x_tts_secret != TTS_SECRET:
-        raise HTTPException(status_code=401, detail="Invalid x-tts-secret")
+        raise HTTPException(status_code=401, detail="Invalid secret")
+
 
 app = FastAPI(title="Thai Edge-TTS", version="1.0.0")
 
