@@ -1,21 +1,16 @@
-"""FastAPI service: Thai TTS via edge-tts.
-
-Voices:
-  male   -> th-TH-NiwatNeural
-  female -> th-TH-PremwadeeNeural
-
-Note: edge-tts does NOT support mood/tone (style/role) for Thai neural
-voices, so the payload only exposes speed and pitch.
-"""
-
 import io
+import subprocess
+import wave
 
 import edge_tts
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-VOICES = {
+from edge import edge_pitch, edge_rate
+from siri import build_prosody, chunk_text, say_wav
+
+EDGETTS_VOICES = {
     "male": "th-TH-NiwatNeural",
     "female": "th-TH-PremwadeeNeural",
 }
@@ -44,16 +39,6 @@ class TTSRequest(BaseModel):
     )
 
 
-def _rate(speed: float) -> str:
-    pct = round((speed - 0.5) * 100)
-    return f"{pct:+d}%"
-
-
-def _pitch(pitch: float) -> str:
-    hz = round((pitch - 0.5) * 100)
-    return f"{hz:+d}Hz"
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -61,12 +46,12 @@ async def health():
 
 @app.post("/generate", dependencies=[Depends(verify_secret)])
 async def tts(req: TTSRequest):
-    voice = VOICES[req.gender]
+    voice = EDGETTS_VOICES[req.gender]
     communicate = edge_tts.Communicate(
         req.text,
         voice,
-        rate=_rate(req.speed),
-        pitch=_pitch(req.pitch),
+        rate=edge_rate(req.speed),
+        pitch=edge_pitch(req.pitch),
     )
 
     buf = io.BytesIO()
@@ -82,3 +67,53 @@ async def tts(req: TTSRequest):
 
     buf.seek(0)
     return StreamingResponse(buf, media_type="audio/mpeg")
+
+
+class SiriRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=5000, description="text to speak")
+    pitch: str | None = Field(
+        None, description="SSML prosody pitch: label/Hz/st/±/%, e.g. +25%, high, -2st"
+    )
+    range: str | None = Field(
+        None, description="SSML prosody range: label/Hz/st/±/%, e.g. high, +30%"
+    )
+    rate: str | None = Field(
+        None, description="SSML prosody rate: label or non-negative %, e.g. 80%, slow"
+    )
+
+
+@app.post("/generate/siri", dependencies=[Depends(verify_secret)])
+async def siri(req: SiriRequest):
+    try:
+        ssml_chunks = [
+            build_prosody(chunk, req.pitch, req.range, req.rate)
+            for chunk in chunk_text(req.text)
+            if chunk.strip()
+        ]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    frames = b""
+    params = None
+    try:
+        for ssml in ssml_chunks:
+            wav = say_wav(ssml)
+            with wave.open(io.BytesIO(wav), "rb") as w:
+                if params is None:
+                    params = w.getparams()
+                frames += w.readframes(w.getnframes())
+    except (subprocess.CalledProcessError, OSError) as exc:
+        detail = getattr(exc, "stderr", b"") or str(exc)
+        if isinstance(detail, bytes):
+            detail = detail.decode(errors="replace")
+        raise HTTPException(status_code=502, detail=f"say failed: {detail}") from exc
+
+    if not frames or params is None:
+        raise HTTPException(status_code=502, detail="No audio generated")
+
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setparams(params)
+        w.writeframes(frames)
+    out.seek(0)
+    return StreamingResponse(out, media_type="audio/wav")
