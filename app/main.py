@@ -11,7 +11,7 @@ voices, so the payload only exposes speed and pitch.
 import io
 
 import edge_tts
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,13 @@ VOICES = {
     "male": "th-TH-NiwatNeural",
     "female": "th-TH-PremwadeeNeural",
 }
+
+TTS_SECRET = "kuyG1bW3qnG5ofoUQOM"
+
+
+def verify_secret(x_tts_secret: str = Header(...)) -> None:
+    if x_tts_secret != TTS_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid x-tts-secret")
 
 app = FastAPI(title="Thai Edge-TTS", version="1.0.0")
 
@@ -51,7 +58,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/")
+@app.post("/", dependencies=[Depends(verify_secret)])
 async def tts(req: TTSRequest):
     voice = VOICES[req.gender]
     communicate = edge_tts.Communicate(
