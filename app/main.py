@@ -59,7 +59,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/", dependencies=[Depends(verify_secret)])
+@app.post("/generate", dependencies=[Depends(verify_secret)])
 async def tts(req: TTSRequest):
     voice = VOICES[req.gender]
     communicate = edge_tts.Communicate(
