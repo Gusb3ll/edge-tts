@@ -71,14 +71,15 @@ async def tts(req: TTSRequest):
 
 class SiriRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000, description="text to speak")
+    # Defaults tuned to match the reference voice (~245Hz, brisk tempo).
     pitch: str | None = Field(
-        None, description="SSML prosody pitch: label/Hz/st/±/%, e.g. +25%, high, -2st"
+        "+21%", description="SSML prosody pitch: label/Hz/st/±/%, e.g. +25%, high, -2st"
     )
     range: str | None = Field(
         None, description="SSML prosody range: label/Hz/st/±/%, e.g. high, +30%"
     )
     rate: str | None = Field(
-        None, description="SSML prosody rate: label or non-negative %, e.g. 80%, slow"
+        "135%", description="SSML prosody rate: label or non-negative %, e.g. 80%, slow"
     )
 
 
