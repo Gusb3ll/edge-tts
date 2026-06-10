@@ -28,7 +28,7 @@ def verify_secret(x_tts_secret: str = Header(...)) -> None:
         raise HTTPException(status_code=401, detail="Invalid secret")
 
 
-app = FastAPI(title="Thai Edge-TTS", version="1.0.0")
+app = FastAPI()
 
 
 class TTSRequest(BaseModel):
